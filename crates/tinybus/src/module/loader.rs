@@ -209,19 +209,17 @@ mod platform {
     }
 
     const LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR: u32 = 0x0000_0100;
+    const LOAD_LIBRARY_SEARCH_SYSTEM32: u32 = 0x0000_0800;
+    pub(super) const LOAD_LIBRARY_FLAGS: u32 =
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32;
     pub(super) type Handle = *mut c_void;
 
     pub(super) fn open(path: &Path) -> Result<Handle> {
         let canonical = std::fs::canonicalize(path)
             .map_err(|_| Error::module_refused(path, "module artifact path is invalid"))?;
         let wide: Vec<u16> = canonical.as_os_str().encode_wide().chain([0]).collect();
-        let handle = unsafe {
-            LoadLibraryExW(
-                wide.as_ptr(),
-                std::ptr::null_mut(),
-                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
-            )
-        };
+        let handle =
+            unsafe { LoadLibraryExW(wide.as_ptr(), std::ptr::null_mut(), LOAD_LIBRARY_FLAGS) };
         if handle.is_null() {
             tracing::debug!(
                 loader_error = unsafe { GetLastError() },
@@ -265,6 +263,12 @@ mod tests {
         let mut descriptor = TbAbiDescriptor::current("module", crate::VERSION);
         descriptor.flags ^= 1 << 2;
         assert!(gate_descriptor(path, &descriptor, false).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_loader_searches_module_directory_and_system32() {
+        assert_eq!(platform::LOAD_LIBRARY_FLAGS, 0x0000_0900);
     }
 
     #[cfg(unix)]
